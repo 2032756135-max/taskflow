@@ -1,0 +1,168 @@
+name: 📋 TaskFlow 每日任务提醒
+
+on:
+  schedule:
+    # UTC 01:00 = 北京时间 09:00，每天早上9点发送
+    - cron: '0 1 * * *'
+  workflow_dispatch:  # 允许手动触发测试
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 分析任务并生成邮件内容
+        id: check
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+          from datetime import datetime, timedelta
+
+          # 读取任务数据
+          try:
+              with open('tasks.json', 'r', encoding='utf-8') as f:
+                  tasks = json.load(f)
+          except Exception as e:
+              print(f"读取 tasks.json 失败: {e}")
+              tasks = []
+
+          today = datetime.now().date()
+          pri_map = {'urgent': '🔥 紧急', 'high': '❗ 高', 'medium': '● 中', 'low': '○ 低'}
+
+          overdue  = []
+          due_today = []
+          due_soon  = []  # 1~3天
+
+          for t in tasks:
+              if t.get('done'):
+                  continue
+              due_str = t.get('due', '')
+              if not due_str:
+                  continue
+              try:
+                  due_date = datetime.strptime(due_str, '%Y-%m-%d').date()
+              except:
+                  continue
+              days = (due_date - today).days
+              pri  = pri_map.get(t.get('priority','medium'), '● 中')
+              item = {'title': t.get('title',''), 'due': due_str, 'days': days, 'pri': pri, 'progress': t.get('progress', 0)}
+
+              if days < 0:
+                  overdue.append(item)
+              elif days == 0:
+                  due_today.append(item)
+              elif days <= 3:
+                  due_soon.append(item)
+
+          has_content = bool(overdue or due_today or due_soon)
+
+          # 生成邮件正文（HTML）
+          date_str = today.strftime('%Y年%m月%d日')
+          total_urgent = len(overdue) + len(due_today)
+
+          html = f"""<!DOCTYPE html>
+          <html lang="zh-CN">
+          <head><meta charset="UTF-8">
+          <style>
+            body{{font-family:'PingFang SC',Arial,sans-serif;background:#f5f5f7;margin:0;padding:20px;}}
+            .card{{background:#fff;border-radius:12px;max-width:600px;margin:0 auto;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.1);}}
+            .header{{background:linear-gradient(135deg,#7c6af7,#f76a8c);padding:24px 28px;color:#fff;}}
+            .header h1{{margin:0;font-size:20px;font-weight:700;}}
+            .header p{{margin:6px 0 0;opacity:.85;font-size:13px;}}
+            .body{{padding:24px 28px;}}
+            .section{{margin-bottom:20px;}}
+            .section-title{{font-size:13px;font-weight:700;color:#888;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:6px;}}
+            .task-row{{display:flex;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f5f5f7;gap:10px;}}
+            .task-row:last-child{{border:none;}}
+            .badge{{font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;font-weight:600;}}
+            .badge-overdue{{background:#fff0f0;color:#e53935;}}
+            .badge-today{{background:#fff8e1;color:#f57c00;}}
+            .badge-soon{{background:#f0f4ff;color:#5c6bc0;}}
+            .task-title{{font-size:14px;color:#1a1a2e;font-weight:500;flex:1;}}
+            .task-meta{{font-size:12px;color:#999;margin-top:2px;}}
+            .footer{{background:#fafafa;padding:16px 28px;font-size:12px;color:#aaa;text-align:center;border-top:1px solid #eee;}}
+            .no-task{{text-align:center;padding:30px;color:#aaa;}}
+            .summary-bar{{background:#f0edff;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:14px;color:#5a4fcf;}}
+            .prog{{height:3px;background:#eee;border-radius:2px;margin-top:4px;}}
+            .prog-fill{{height:3px;background:#7c6af7;border-radius:2px;}}
+          </style>
+          </head>
+          <body>
+          <div class="card">
+            <div class="header">
+              <h1>📋 TaskFlow 每日任务提醒</h1>
+              <p>{date_str} · 今日需要关注 {total_urgent} 个任务</p>
+            </div>
+            <div class="body">
+          """
+
+          if not has_content:
+              html += '<div class="no-task">🎉 太棒了！今天没有紧急或即将到期的任务。</div>'
+          else:
+              html += f'<div class="summary-bar">⚡ 共发现 <strong>{len(overdue)}</strong> 个逾期 · <strong>{len(due_today)}</strong> 个今日到期 · <strong>{len(due_soon)}</strong> 个即将到期（3天内）</div>'
+
+              def render_section(title, items, badge_cls, badge_fn):
+                  if not items: return ''
+                  s = f'<div class="section"><div class="section-title">{title}</div>'
+                  for item in items:
+                      prog = item['progress']
+                      prog_bar = f'<div class="prog"><div class="prog-fill" style="width:{prog}%"></div></div>' if prog else ''
+                      s += f'''<div class="task-row">
+                          <span class="badge {badge_cls}">{badge_fn(item)}</span>
+                          <div style="flex:1">
+                            <div class="task-title">{item["title"]}</div>
+                            <div class="task-meta">{item["pri"]} · {item["due"]}{f" · 进度 {prog}%" if prog else ""}</div>
+                            {prog_bar}
+                          </div>
+                        </div>'''
+                  s += '</div>'
+                  return s
+
+              html += render_section('⚠ 已逾期', overdue, 'badge-overdue', lambda i: f'逾期 {-i["days"]} 天')
+              html += render_section('🔴 今天到期', due_today, 'badge-today', lambda i: '今天到期')
+              html += render_section('🟡 即将到期（3天内）', due_soon, 'badge-soon', lambda i: f'{i["days"]}天后')
+
+          html += f"""
+            </div>
+            <div class="footer">TaskFlow 自动提醒 · 由 GitHub Actions 发送 · {date_str}</div>
+          </div>
+          </body></html>"""
+
+          # 写入文件供后续步骤使用
+          with open('/tmp/email_body.html', 'w', encoding='utf-8') as f:
+              f.write(html)
+
+          subject_prefix = f"[{total_urgent}个紧急] " if total_urgent > 0 else ""
+          subject = f"📋 TaskFlow {subject_prefix}每日提醒 · {date_str}"
+          with open('/tmp/email_subject.txt', 'w') as f:
+              f.write(subject)
+
+          # 输出是否需要发送（无论如何都发，方便每天查看）
+          with open('/tmp/send.txt', 'w') as f:
+              f.write('true')
+
+          print(f"逾期: {len(overdue)}, 今日: {len(due_today)}, 3天内: {len(due_soon)}")
+          PYEOF
+
+          echo "send=$(cat /tmp/send.txt)" >> $GITHUB_OUTPUT
+          echo "subject=$(cat /tmp/email_subject.txt)" >> $GITHUB_OUTPUT
+
+      - name: 发送提醒邮件
+        if: steps.check.outputs.send == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: ${{ steps.check.outputs.subject }}
+          to: zxyy40011@gmail.com
+          from: TaskFlow 提醒 <${{ secrets.GMAIL_USER }}>
+          html_body: file:///tmp/email_body.html
+
+      - name: 完成
+        run: echo "✅ 提醒邮件已发送至 zxyy40011@gmail.com"
