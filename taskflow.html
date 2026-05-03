@@ -57,6 +57,7 @@
   .tag-btn { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; font-size:.85rem; color:var(--text2); transition:background .15s; }
   .tag-btn:hover { background:var(--surface2); color:var(--text); }
   .tag-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .tag-filter { cursor:pointer; }
 
   /* MAIN */
   main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -395,6 +396,8 @@ async function loadFromGitHub() {
   } catch(e) {
     setSyncStatus('err', '连接失败');
     toast('❌ GitHub 加载失败：' + e.message);
+    // fallback to local backup
+    try { const local = localStorage.getItem('tf_tasks'); if(local) { tasks = JSON.parse(local); applyFilters(); } } catch(_){}
   }
 }
 
@@ -437,6 +440,7 @@ async function pushToGitHub() {
 // debounce saves — wait 1.5s after last change
 function scheduleSave() {
   clearTimeout(saveTimer);
+  localStorage.setItem('tf_tasks', JSON.stringify(tasks)); // local backup
   saveTimer = setTimeout(pushToGitHub, 1500);
 }
 
@@ -484,7 +488,7 @@ function toast(msg) {
   clearTimeout(el._t);
   el._t = setTimeout(() => { el.style.display = 'none'; }, 3200);
 }
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 /* ═══════════════════ VIEWS / FILTERS ═══════════════════ */
 function setView(v, el) {
@@ -566,25 +570,25 @@ function renderTasks(list) {
 }
 function taskCardHTML(t) {
   const dc = dueClass(t.due, t.done);
-  const dueHTML  = t.due ? `<span class="meta-chip ${dc}">${dueLabel(t.due)}</span>` : '';
-  const tagsHTML = (t.tags||[]).map(g=>`<span class="meta-chip" style="cursor:pointer" onclick="filterByTag('${g}')">${g}</span>`).join('');
-  const hoursHTML= t.hours ? `<span class="meta-chip">⏱ ${t.hours}h</span>` : '';
-  const progHTML = (t.progress||0)>0 ? `<span class="meta-chip" style="color:var(--accent3);border-color:var(--accent3)">${t.progress}%</span>` : '';
+  const dueHTML  = t.due ? `<span class="meta-chip ${esc(dc)}">${esc(dueLabel(t.due))}</span>` : '';
+  const tagsHTML = (t.tags||[]).map(g=>`<span class="meta-chip tag-filter" data-tag="${esc(g)}">${esc(g)}</span>`).join('');
+  const hoursHTML= t.hours ? `<span class="meta-chip">⏱ ${esc(String(t.hours))}h</span>` : '';
+  const progHTML = (t.progress||0)>0 ? `<span class="meta-chip" style="color:var(--accent3);border-color:var(--accent3)">${esc(String(t.progress))}%</span>` : '';
   const dot      = (dc==='due-urgent'||dc==='due-past') ? `<span class="reminder-dot"></span>` : '';
   return `
-  <div class="task-card p-${t.priority}${t.done?' done':''}" id="card-${t.id}" onclick="openDetail('${t.id}')">
-    <div class="task-check${t.done?' checked':''}" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
+  <div class="task-card p-${esc(t.priority)}${t.done?' done':''}" data-id="${esc(t.id)}" id="card-${esc(t.id)}">
+    <div class="task-check${t.done?' checked':''}" data-action="toggle"></div>
     <div class="task-body">
       <div class="task-title">${esc(t.title)}${dot}</div>
       ${t.desc?`<div class="task-desc">${esc(t.desc).slice(0,120)}${t.desc.length>120?'…':''}</div>`:''}
       <div class="task-meta">
-        <span class="priority-badge">${priLabel[t.priority]||t.priority}</span>
+        <span class="priority-badge">${esc(priLabel[t.priority]||t.priority)}</span>
         ${dueHTML}${tagsHTML}${hoursHTML}${progHTML}
       </div>
     </div>
     <div class="task-actions">
-      <button class="icon-btn" title="编辑" onclick="event.stopPropagation();openEdit('${t.id}')">✏</button>
-      <button class="icon-btn del" title="删除" onclick="event.stopPropagation();deleteTask('${t.id}')">🗑</button>
+      <button class="icon-btn" title="编辑" data-action="edit">✏</button>
+      <button class="icon-btn del" title="删除" data-action="delete">🗑</button>
     </div>
   </div>`;
 }
@@ -610,9 +614,9 @@ function renderTags() {
   tasks.forEach(t=>(t.tags||[]).forEach(g=>{all[g]=(all[g]||0)+1;}));
   const colors=['#7c6af7','#f76a8c','#6af7c8','#f7c46a','#6ab8f7','#f7a06a'];
   document.getElementById('tagList').innerHTML = Object.entries(all).map(([g,c],i)=>
-    `<div class="tag-btn" onclick="filterByTag('${g}')">
+    `<div class="tag-btn tag-filter" data-tag="${esc(g)}">
       <span class="tag-dot" style="background:${colors[i%colors.length]}"></span>
-      <span>${g}</span>
+      <span>${esc(g)}</span>
       <span style="margin-left:auto;font-size:.7rem;color:var(--text3)">${c}</span>
     </div>`
   ).join('');
@@ -716,8 +720,9 @@ function deleteFromDetail() { if(detailId) deleteTask(detailId); }
 
 /* ═══════════════════ EXPORT ═══════════════════ */
 function exportData() {
+  function csvEscape(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
   const rows=['标题,描述,优先级,截止日期,标签,进度,完成'];
-  tasks.forEach(t=>rows.push([t.title,t.desc||'',priLabel[t.priority]||t.priority,t.due||'',(t.tags||[]).join('|'),(t.progress||0)+'%',t.done?'是':'否'].map(s=>`"${s}"`).join(',')));
+  tasks.forEach(t=>rows.push([t.title,t.desc||'',priLabel[t.priority]||t.priority,t.due||'',(t.tags||[]).join('|'),(t.progress||0)+'%',t.done?'是':'否'].map(csvEscape).join(',')));
   const blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=`taskflow_${todayStr()}.csv`; a.click();
@@ -732,6 +737,21 @@ document.addEventListener('keydown',e=>{
 });
 
 /* ═══════════════════ INIT ═══════════════════ */
+// Event delegation for task cards — avoids inline onclick XSS
+document.getElementById('taskArea').addEventListener('click', e => {
+  const card = e.target.closest('.task-card');
+  if (!card) return;
+  const id = card.dataset.id;
+  if (e.target.closest('[data-action="toggle"]')) { e.stopPropagation(); toggleDone(id); }
+  else if (e.target.closest('[data-action="edit"]')) { e.stopPropagation(); openEdit(id); }
+  else if (e.target.closest('[data-action="delete"]')) { e.stopPropagation(); deleteTask(id); }
+  else { openDetail(id); }
+});
+// Event delegation for tag filtering
+document.addEventListener('click', e => {
+  const tagEl = e.target.closest('.tag-filter');
+  if (tagEl) filterByTag(tagEl.dataset.tag);
+});
 if(hasToken()) { loadFromGitHub(); }
 else { openSetup(); }
 </script>

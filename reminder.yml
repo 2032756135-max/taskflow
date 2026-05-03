@@ -44,7 +44,7 @@ jobs:
                   continue
               try:
                   due_date = datetime.strptime(due_str, '%Y-%m-%d').date()
-              except:
+              except (ValueError, OSError) as e:
                   continue
               days = (due_date - today).days
               pri  = pri_map.get(t.get('priority','medium'), '● 中')
