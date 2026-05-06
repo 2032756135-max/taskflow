@@ -3,7 +3,7 @@
     "id": "motq8vvwzz5",
     "title": "W Mainline MP3.1 建议5.10后合入",
     "desc": "",
-    "priority": "medium",
+    "priority": "high",
     "due": "2026-05-11",
     "tags": [
       "mainline"
