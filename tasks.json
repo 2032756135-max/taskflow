@@ -1,5 +1,21 @@
 [
   {
+    "id": "motndg9sryw",
+    "title": "工程师编译问题",
+    "desc": "报错原因提供",
+    "priority": "medium",
+    "due": "2026-05-06",
+    "tags": [
+      "版本支持"
+    ],
+    "done": false,
+    "hours": 0,
+    "progress": 0,
+    "notes": "",
+    "created": 1778047164064,
+    "reminded": false
+  },
+  {
     "id": "mopg8u3w7ww",
     "title": "Ant项目SPL升级到5月",
     "desc": "MTK Android Security Patch",
