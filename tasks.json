@@ -1,5 +1,21 @@
 [
   {
+    "id": "motvh5j142a",
+    "title": "V Mainline MP2.0 建议5月20前合入",
+    "desc": "正常安排合入，请在5.20前完成",
+    "priority": "medium",
+    "due": "2026-05-20",
+    "tags": [
+      "mainline"
+    ],
+    "done": false,
+    "hours": 2,
+    "progress": 0,
+    "notes": "",
+    "created": 1778060773693,
+    "reminded": false
+  },
+  {
     "id": "motvdj0synt",
     "title": "V Mainline MP1.0 建议5月20前合入",
     "desc": "正常合入",
