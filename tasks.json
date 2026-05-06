@@ -8,9 +8,9 @@
     "tags": [
       "mainline"
     ],
-    "done": false,
+    "done": true,
     "hours": 0,
-    "progress": 0,
+    "progress": 100,
     "notes": "",
     "created": 1778060863732,
     "reminded": false
