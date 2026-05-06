@@ -5,9 +5,11 @@
     "desc": "",
     "priority": "high",
     "due": "2026-05-18",
-    "tags": [],
+    "tags": [
+      "mainline"
+    ],
     "done": false,
-    "hours": 0,
+    "hours": 2,
     "progress": 0,
     "notes": "",
     "created": 1778051835908,
