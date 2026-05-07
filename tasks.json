@@ -184,9 +184,9 @@
     "tags": [
       "GMS"
     ],
-    "done": false,
+    "done": true,
     "hours": 1.5,
-    "progress": 0,
+    "progress": 100,
     "notes": "",
     "created": 1778047948941,
     "reminded": false
