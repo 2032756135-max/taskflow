@@ -64,8 +64,8 @@
   {
     "id": "motvyhiidzh",
     "title": "Goldfinch TMO OS UP 5月SPL GCHTMOV-3947",
-    "desc": "",
-    "priority": "medium",
+    "desc": "GMS202411、GMS202503、patch待入库879937",
+    "priority": "high",
     "due": "2026-05-09",
     "tags": [
       "SPL"
