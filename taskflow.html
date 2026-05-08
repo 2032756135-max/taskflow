@@ -304,7 +304,7 @@ let editingId = null;
 let detailId = null;
 let saveTimer = null;
 
-/* ═══════════════════ LOCAL STORAGE ═══════════════════ */
+/* ═══════════════════ TASKS.JSON STORAGE ═══════════════════ */
 function setSyncStatus(state, label) {
   const el = document.getElementById('syncStatus');
   const dot = el.querySelector('.sync-dot');
@@ -313,40 +313,42 @@ function setSyncStatus(state, label) {
   dot.className = 'sync-dot' + (state === 'syncing' ? ' spin' : '');
 }
 
-function loadFromLocal() {
-  setSyncStatus('syncing', '加载中…');
+async function loadFromTasksFile() {
+  setSyncStatus('syncing', '读取 tasks.json…');
   try {
-    const local = localStorage.getItem('tf_tasks');
-    if (!local) {
-      tasks = [];
-    } else {
-      tasks = JSON.parse(local);
-    }
-    setSyncStatus('ok', '本地存储');
-    applyFilters();
+    const resp = await fetch('./tasks.json', { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    tasks = Array.isArray(data) ? data : [];
+    setSyncStatus('ok', '数据源：tasks.json');
   } catch(e) {
     tasks = [];
     setSyncStatus('err', '读取失败');
-    toast('❌ 本地数据读取失败：' + e.message);
-    applyFilters();
+    toast('❌ tasks.json 读取失败：' + e.message);
   }
+  applyFilters();
 }
 
-function persistToLocal() {
-  setSyncStatus('syncing', '保存中…');
+async function persistToTasksFile() {
+  setSyncStatus('syncing', '写入 tasks.json…');
   try {
-    localStorage.setItem('tf_tasks', JSON.stringify(tasks));
-    setSyncStatus('ok', '已保存 ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+    const resp = await fetch('./tasks.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tasks, null, 2)
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
   } catch(e) {
-    setSyncStatus('err', '保存失败');
-    toast('❌ 本地保存失败：' + e.message);
+    setSyncStatus('err', '写入失败');
+    toast('❌ tasks.json 写入失败：' + e.message + '（请确保服务端支持 PUT）');
   }
 }
 
 // debounce saves — wait 1.5s after last change
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(persistToLocal, 300);
+  saveTimer = setTimeout(() => { persistToTasksFile(); }, 300);
 }
 
 /* ═══════════════════ CLOCK ═══════════════════ */
@@ -655,7 +657,7 @@ document.addEventListener('click', e => {
   const tagEl = e.target.closest('.tag-filter');
   if (tagEl) filterByTag(tagEl.dataset.tag);
 });
-loadFromLocal();
+loadFromTasksFile();
 </script>
 </body>
 </html>
