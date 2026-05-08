@@ -1,5 +1,21 @@
 [
   {
+    "id": "mowjchp42p6",
+    "title": "taibaishan版本未转换",
+    "desc": "查看版本被删除了 是不是客户删除了，要求客户重新上传",
+    "priority": "medium",
+    "due": "2026-05-08",
+    "tags": [
+      "版本支持"
+    ],
+    "done": false,
+    "hours": 0,
+    "progress": 0,
+    "notes": "",
+    "created": 1778221799320,
+    "reminded": false
+  },
+  {
     "id": "mowjamrij58",
     "title": "Selene 8.7 vision V 4.0 5GSELENEVZW-6345 SPL",
     "desc": "4、5月SPL",
