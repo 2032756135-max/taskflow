@@ -218,16 +218,12 @@
   <div class="nav-item" onclick="setView('overdue',this)"><span>⚠️</span><span>已逾期</span><span class="badge" id="b-overdue">0</span></div>
   <div class="aside-section" style="margin-top:8px"><div class="aside-label">标签</div></div>
   <div class="tag-list" id="tagList"></div>
-  <div style="margin-top:auto;padding:12px 16px;border-top:1px solid var(--border)">
-    <div class="tag-btn" onclick="openSetup()"><span>⚙</span><span>GitHub 设置</span></div>
-  </div>
 </aside>
 
 <main>
   <div class="toolbar">
     <h2 id="viewTitle">全部任务</h2>
     <div class="toolbar-spacer"></div>
-    <button class="btn btn-ghost" onclick="manualSync()">同步</button>
     <button class="btn btn-ghost" onclick="exportData()">导出</button>
     <button class="btn btn-primary" onclick="openAddModal()">＋ 新建任务</button>
   </div>
@@ -245,7 +241,7 @@
     </select>
   </div>
   <div class="task-area" id="taskArea">
-    <div class="empty"><div class="big">⏳</div><div>正在连接 GitHub…</div></div>
+    <div class="empty"><div class="big">💾</div><div>正在加载本地数据…</div></div>
   </div>
 </main>
 
@@ -297,53 +293,10 @@
   </div>
 </div>
 
-<!-- SETUP MODAL -->
-<div class="modal-overlay" id="setupOverlay" style="display:none" onclick="if(event.target===this&&hasToken())closeSetup()">
-  <div class="modal setup-modal">
-    <h3>
-      <span>⚙ GitHub 连接设置</span>
-      <span class="close" onclick="if(hasToken())closeSetup()" style="opacity:.5" id="setupClose">✕</span>
-    </h3>
-
-    <div class="setup-step">
-      <div class="setup-step-num">STEP 01 — 创建 Personal Access Token</div>
-      <p>打开 GitHub → Settings → Developer settings → Personal access tokens → <strong>Tokens (classic)</strong> → Generate new token</p>
-      <p>勾选权限：<code>repo</code>（完整仓库权限）<br>有效期建议选 <code>No expiration</code></p>
-      <p><a href="https://github.com/settings/tokens/new" target="_blank">→ 点击直接前往创建页面</a></p>
-    </div>
-
-    <div class="setup-step">
-      <div class="setup-step-num">STEP 02 — 粘贴 Token</div>
-      <p>Token 只显示一次，请复制后粘贴到下方。Token 仅保存在你的浏览器本地，不会上传任何地方。</p>
-      <div class="field" style="margin:0">
-        <input type="password" id="f-token" placeholder="ghp_xxxxxxxxxxxx…" autocomplete="off">
-      </div>
-    </div>
-
-    <div class="setup-step">
-      <div class="setup-step-num">INFO — 仓库信息（已预配置）</div>
-      <p>数据将同步到：<code>2032756135-max / taskflow</code><br>文件路径：<code>tasks.json</code></p>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn btn-primary" onclick="saveSetup()" style="width:100%">✓ 连接并同步</button>
-    </div>
-  </div>
-</div>
-
 <div id="toast"></div>
 
 <script>
-/* ═══════════════════ GITHUB CONFIG ═══════════════════ */
-const GH = {
-  owner: '2032756135-max',
-  repo:  'taskflow',
-  path:  'tasks.json',
-  api:   'https://api.github.com'
-};
-
 let tasks = [];
-let fileSha = null;          // current SHA of tasks.json on GitHub
 let currentView = 'all';
 let currentPriFilter = 'all';
 let currentSort = 'created';
@@ -351,25 +304,7 @@ let editingId = null;
 let detailId = null;
 let saveTimer = null;
 
-/* ═══════════════════ TOKEN ═══════════════════ */
-function getToken() { return localStorage.getItem('tf_token') || ''; }
-function hasToken()  { return !!getToken(); }
-
-function saveSetup() {
-  const t = document.getElementById('f-token').value.trim();
-  if (!t) { toast('请粘贴 GitHub Token'); return; }
-  localStorage.setItem('tf_token', t);
-  closeSetup();
-  loadFromGitHub();
-}
-function openSetup() {
-  document.getElementById('f-token').value = getToken();
-  document.getElementById('setupOverlay').style.display = 'flex';
-  document.getElementById('setupClose').style.opacity = hasToken() ? '1' : '.3';
-}
-function closeSetup() { document.getElementById('setupOverlay').style.display = 'none'; }
-
-/* ═══════════════════ GITHUB API ═══════════════════ */
+/* ═══════════════════ LOCAL STORAGE ═══════════════════ */
 function setSyncStatus(state, label) {
   const el = document.getElementById('syncStatus');
   const dot = el.querySelector('.sync-dot');
@@ -378,86 +313,41 @@ function setSyncStatus(state, label) {
   dot.className = 'sync-dot' + (state === 'syncing' ? ' spin' : '');
 }
 
-async function loadFromGitHub() {
-  const token = getToken();
-  if (!token) { openSetup(); return; }
+function loadFromLocal() {
   setSyncStatus('syncing', '加载中…');
   try {
-    const res = await fetch(
-      `${GH.api}/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`,
-      { headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' } }
-    );
-    if (res.status === 404) {
-      // file doesn't exist yet — start fresh
+    const local = localStorage.getItem('tf_tasks');
+    if (!local) {
       tasks = [];
-      fileSha = null;
-      setSyncStatus('ok', '已连接');
-      applyFilters();
-      return;
+    } else {
+      tasks = JSON.parse(local);
     }
-    if (res.status === 401) {
-      setSyncStatus('err', 'Token 无效');
-      toast('❌ GitHub Token 无效，请重新设置'); openSetup(); return;
-    }
-    if (!res.ok) throw new Error(res.status);
-    const data = await res.json();
-    fileSha = data.sha;
-    // decode base64 with unicode support
-    tasks = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\n/g, '')))));
-    setSyncStatus('ok', '已同步');
+    setSyncStatus('ok', '本地存储');
     applyFilters();
   } catch(e) {
-    setSyncStatus('err', '连接失败');
-    toast('❌ GitHub 加载失败：' + e.message);
-    // fallback to local backup
-    try { const local = localStorage.getItem('tf_tasks'); if(local) { tasks = JSON.parse(local); applyFilters(); } } catch(_){}
+    tasks = [];
+    setSyncStatus('err', '读取失败');
+    toast('❌ 本地数据读取失败：' + e.message);
+    applyFilters();
   }
 }
 
-async function pushToGitHub() {
-  const token = getToken();
-  if (!token) return;
+function persistToLocal() {
   setSyncStatus('syncing', '保存中…');
   try {
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(tasks, null, 2))));
-    const body = {
-      message: `chore: update tasks ${new Date().toISOString().slice(0,16)}`,
-      content,
-      ...(fileSha ? { sha: fileSha } : {})
-    };
-    const res = await fetch(
-      `${GH.api}/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      }
-    );
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || res.status);
-    }
-    const data = await res.json();
-    fileSha = data.content.sha;
-    setSyncStatus('ok', '已同步 ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+    localStorage.setItem('tf_tasks', JSON.stringify(tasks));
+    setSyncStatus('ok', '已保存 ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
   } catch(e) {
     setSyncStatus('err', '保存失败');
-    toast('❌ 保存失败：' + e.message);
+    toast('❌ 本地保存失败：' + e.message);
   }
 }
 
 // debounce saves — wait 1.5s after last change
 function scheduleSave() {
   clearTimeout(saveTimer);
-  localStorage.setItem('tf_tasks', JSON.stringify(tasks)); // local backup
-  saveTimer = setTimeout(pushToGitHub, 1500);
+  saveTimer = setTimeout(persistToLocal, 300);
 }
-
-function manualSync() { loadFromGitHub(); }
 
 /* ═══════════════════ CLOCK ═══════════════════ */
 function tick() {
@@ -746,7 +636,7 @@ function exportData() {
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key==='k'){ e.preventDefault(); document.getElementById('searchInput').focus(); }
   if((e.ctrlKey||e.metaKey)&&e.key==='n'){ e.preventDefault(); openAddModal(); }
-  if(e.key==='Escape'){ closeModal(); closeSetup(); closeDetail(); }
+  if(e.key==='Escape'){ closeModal(); closeDetail(); }
 });
 
 /* ═══════════════════ INIT ═══════════════════ */
@@ -765,8 +655,7 @@ document.addEventListener('click', e => {
   const tagEl = e.target.closest('.tag-filter');
   if (tagEl) filterByTag(tagEl.dataset.tag);
 });
-if(hasToken()) { loadFromGitHub(); }
-else { openSetup(); }
+loadFromLocal();
 </script>
 </body>
 </html>
