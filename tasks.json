@@ -56,9 +56,9 @@
     "tags": [
       "SPL"
     ],
-    "done": false,
+    "done": true,
     "hours": 1.5,
-    "progress": 0,
+    "progress": 100,
     "notes": "",
     "created": 1778143780459,
     "reminded": false
