@@ -5,7 +5,9 @@
     "desc": "",
     "priority": "medium",
     "due": "2026-05-08",
-    "tags": [],
+    "tags": [
+      "版本支持"
+    ],
     "done": false,
     "hours": 0,
     "progress": 0,
