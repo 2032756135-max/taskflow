@@ -8,9 +8,9 @@
     "tags": [
       "版本支持"
     ],
-    "done": false,
+    "done": true,
     "hours": 0,
-    "progress": 0,
+    "progress": 100,
     "notes": "",
     "created": 1778221935497,
     "reminded": false
