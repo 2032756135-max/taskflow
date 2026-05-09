@@ -304,7 +304,7 @@ let editingId = null;
 let detailId = null;
 let saveTimer = null;
 
-/* ═══════════════════ TASKS.JSON STORAGE ═══════════════════ */
+/* ═══════════════════ TASKS.JSON STORAGE（支持双击打开 HTML） ═══════════════════ */
 function setSyncStatus(state, label) {
   const el = document.getElementById('syncStatus');
   const dot = el.querySelector('.sync-dot');
@@ -313,15 +313,44 @@ function setSyncStatus(state, label) {
   dot.className = 'sync-dot' + (state === 'syncing' ? ' spin' : '');
 }
 
-async function loadFromTasksFile() {
+let tasksFileHandle = null;
+
+async function ensureTasksFileHandle() {
+  if (tasksFileHandle) return tasksFileHandle;
+  if (!window.showOpenFilePicker) return null;
+  const [handle] = await window.showOpenFilePicker({
+    multiple: false,
+    excludeAcceptAllOption: true,
+    types: [{ description: 'TaskFlow 数据文件', accept: { 'application/json': ['.json'] } }]
+  });
+  if (handle.name !== 'tasks.json') {
+    toast('⚠ 请选择与 taskflow.html 同级目录中的 tasks.json');
+  }
+  tasksFileHandle = handle;
+  return handle;
+}
+
+async function loadTasks() {
   setSyncStatus('syncing', '读取 tasks.json…');
   try {
-    const resp = await fetch('./tasks.json', { cache: 'no-store' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
+    if (location.protocol !== 'file:') {
+      const resp = await fetch('./tasks.json', { cache: 'no-store' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      tasks = Array.isArray(data) ? data : [];
+      setSyncStatus('ok', '数据源：tasks.json');
+      applyFilters();
+      return;
+    }
+
+    const handle = await ensureTasksFileHandle();
+    if (!handle) throw new Error('当前浏览器不支持直接写入本地文件');
+    const file = await handle.getFile();
+    const text = await file.text();
+    const data = text ? JSON.parse(text) : [];
     tasks = Array.isArray(data) ? data : [];
-    setSyncStatus('ok', '数据源：tasks.json');
-  } catch(e) {
+    setSyncStatus('ok', '数据源：tasks.json（本地文件）');
+  } catch (e) {
     tasks = [];
     setSyncStatus('err', '读取失败');
     toast('❌ tasks.json 读取失败：' + e.message);
@@ -329,26 +358,35 @@ async function loadFromTasksFile() {
   applyFilters();
 }
 
-async function persistToTasksFile() {
+async function persistTasks() {
   setSyncStatus('syncing', '写入 tasks.json…');
   try {
-    const resp = await fetch('./tasks.json', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tasks, null, 2)
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (location.protocol !== 'file:') {
+      const resp = await fetch('./tasks.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tasks, null, 2)
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+      return;
+    }
+
+    const handle = await ensureTasksFileHandle();
+    if (!handle) throw new Error('当前浏览器不支持直接写入本地文件');
+    const writable = await handle.createWritable();
+    await writable.write(JSON.stringify(tasks, null, 2));
+    await writable.close();
     setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
-  } catch(e) {
+  } catch (e) {
     setSyncStatus('err', '写入失败');
-    toast('❌ tasks.json 写入失败：' + e.message + '（请确保服务端支持 PUT）');
+    toast('❌ tasks.json 写入失败：' + e.message);
   }
 }
 
-// debounce saves — wait 1.5s after last change
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { persistToTasksFile(); }, 300);
+  saveTimer = setTimeout(() => { persistTasks(); }, 300);
 }
 
 /* ═══════════════════ CLOCK ═══════════════════ */
@@ -657,7 +695,7 @@ document.addEventListener('click', e => {
   const tagEl = e.target.closest('.tag-filter');
   if (tagEl) filterByTag(tagEl.dataset.tag);
 });
-loadFromTasksFile();
+loadTasks();
 </script>
 </body>
 </html>
