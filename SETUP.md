@@ -1,6 +1,16 @@
 # TaskFlow 部署完整指南
 
-> 数据存储在 GitHub · 每天早上9点邮件提醒 · 换电脑不丢数据
+> 支持直接双击 `taskflow.html` 打开 · 数据读写 `tasks.json` · 每天早上9点邮件提醒
+
+---
+
+## 零、最快使用（双击打开）
+
+1. 把 `taskflow.html` 放到任意文件夹。
+2. **直接双击 `taskflow.html`** 即可使用（无需启动本地服务）。
+3. 首次打开会让你选择同级目录中的 `tasks.json`，之后任务会直接读写这个文件。
+
+> 提示：请确保 `taskflow.html` 与 `tasks.json` 在同一目录，且选择的就是该 `tasks.json`。
 
 ---
 
