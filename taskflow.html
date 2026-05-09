@@ -315,6 +315,10 @@ function setSyncStatus(state, label) {
 
 let tasksFileHandle = null;
 
+function isUserGestureError(err) {
+  return err && (err.name === 'SecurityError' || /user gesture|用户手势|must be handling a user gesture/i.test(err.message || ''));
+}
+
 async function ensureTasksFileHandle() {
   if (tasksFileHandle) return tasksFileHandle;
   if (!window.showOpenFilePicker) return null;
@@ -336,6 +340,27 @@ async function ensureTasksFileHandle() {
   return handle;
 }
 
+
+async function connectTasksFile() {
+  if (location.protocol !== 'file:') {
+    toast('当前为服务器模式，无需手动选择文件');
+    return;
+  }
+  try {
+    const handle = await ensureTasksFileHandle();
+    if (!handle) {
+      toast('已取消选择文件');
+      return;
+    }
+    await loadTasks();
+    toast('✅ 已连接 tasks.json');
+  } catch (e) {
+    setSyncStatus('err', '读取失败');
+    const hint = isUserGestureError(e) ? '请通过点击触发文件选择。' : e.message;
+    toast('❌ 连接 tasks.json 失败：' + hint);
+  }
+}
+
 async function loadTasks() {
   setSyncStatus('syncing', '读取 tasks.json…');
   try {
@@ -355,13 +380,13 @@ async function loadTasks() {
       return;
     }
 
-    const handle = await ensureTasksFileHandle();
-    if (!handle) {
+    if (!tasksFileHandle) {
       tasks = [];
-      setSyncStatus('ok', '未连接 tasks.json（当前为仅内存模式）');
+      setSyncStatus('ok', '未连接 tasks.json（点击右上角“未连接”以选择文件）');
       applyFilters();
       return;
     }
+    const handle = tasksFileHandle;
     const file = await handle.getFile();
     const text = await file.text();
     const data = text ? JSON.parse(text) : [];
@@ -370,7 +395,8 @@ async function loadTasks() {
   } catch (e) {
     tasks = [];
     setSyncStatus('err', '读取失败');
-    toast('❌ tasks.json 读取失败：' + e.message);
+    const hint = isUserGestureError(e) ? '需要点击右上角“未连接”后选择文件。' : e.message;
+    toast('❌ tasks.json 读取失败：' + hint);
   }
   applyFilters();
 }
@@ -712,6 +738,7 @@ document.addEventListener('click', e => {
   const tagEl = e.target.closest('.tag-filter');
   if (tagEl) filterByTag(tagEl.dataset.tag);
 });
+document.getElementById('syncStatus').addEventListener('click', connectTasksFile);
 loadTasks();
 </script>
 </body>
