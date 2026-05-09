@@ -28,7 +28,8 @@
 
   /* HEADER */
   header { display:flex; align-items:center; gap:18px; padding:0 32px; height:72px; background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; backdrop-filter:blur(24px) saturate(140%); -webkit-backdrop-filter:blur(24px) saturate(140%); }
-  .logo { font-size:1.12rem; font-weight:700; color:var(--text); letter-spacing:0.2px; white-space:nowrap; }
+  .logo { margin-left:auto; display:flex; align-items:center; gap:10px; font-size:1.12rem; font-weight:700; color:var(--text); letter-spacing:0.2px; white-space:nowrap; }
+  .logo img { width:34px; height:34px; border-radius:10px; object-fit:cover; border:1px solid var(--border); box-shadow:var(--shadow-sm); }
   .header-search { flex:1; max-width:380px; position:relative; }
   .header-search input { width:100%; background:rgba(255,255,255,0.7); border:1px solid var(--border); border-radius:14px; padding:10px 14px 10px 36px; color:var(--text); font-size:.93rem; font-family:var(--sans); outline:none; transition:border .2s,box-shadow .2s,background .2s; box-shadow:inset 0 1px 1px rgba(255,255,255,0.5); }
   .header-search input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(0,113,227,0.15); }
@@ -191,7 +192,6 @@
 <body>
 
 <header>
-  <div class="logo">TaskFlow</div>
   <div class="header-search">
     <span class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
     <input type="text" id="searchInput" placeholder="搜索任务… (Ctrl+K)" oninput="applyFilters()">
@@ -204,6 +204,10 @@
     <div class="stat-pill">今日到期 <b id="statToday">0</b></div>
     <div class="stat-pill">逾期 <b id="statOverdue" style="color:var(--accent2)">0</b></div>
     <div id="clock"></div>
+  </div>
+  <div class="logo">
+    <img src="./taskflow-logo.svg" alt="TaskFlow Logo">
+    <span>TaskFlow</span>
   </div>
 </header>
 
