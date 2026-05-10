@@ -308,7 +308,7 @@ let editingId = null;
 let detailId = null;
 let saveTimer = null;
 
-/* ═══════════════════ TASKS.JSON STORAGE（支持双击打开 HTML） ═══════════════════ */
+/* ═══════════════════ TASKS.JSON STORAGE（自动读取仓库内 tasks.json） ═══════════════════ */
 function setSyncStatus(state, label) {
   const el = document.getElementById('syncStatus');
   const dot = el.querySelector('.sync-dot');
@@ -317,90 +317,32 @@ function setSyncStatus(state, label) {
   dot.className = 'sync-dot' + (state === 'syncing' ? ' spin' : '');
 }
 
-let tasksFileHandle = null;
-
-function isUserGestureError(err) {
-  return err && (err.name === 'SecurityError' || /user gesture|用户手势|must be handling a user gesture/i.test(err.message || ''));
-}
-
-async function ensureTasksFileHandle() {
-  if (tasksFileHandle) return tasksFileHandle;
-  if (!window.showOpenFilePicker) return null;
-  let handle;
-  try {
-    [handle] = await window.showOpenFilePicker({
-      multiple: false,
-      excludeAcceptAllOption: true,
-      types: [{ description: 'TaskFlow 数据文件', accept: { 'application/json': ['.json'] } }]
-    });
-  } catch (e) {
-    if (e.name === 'AbortError') return null; // 用户取消选择文件
-    throw e;
-  }
-  if (handle.name !== 'tasks.json') {
-    toast('⚠ 请选择与 taskflow.html 同级目录中的 tasks.json');
-  }
-  tasksFileHandle = handle;
-  return handle;
-}
-
-
-async function connectTasksFile() {
-  if (location.protocol !== 'file:') {
-    toast('当前为服务器模式，无需手动选择文件');
-    return;
-  }
-  try {
-    const handle = await ensureTasksFileHandle();
-    if (!handle) {
-      toast('已取消选择文件');
-      return;
-    }
-    await loadTasks();
-    toast('✅ 已连接 tasks.json');
-  } catch (e) {
-    setSyncStatus('err', '读取失败');
-    const hint = isUserGestureError(e) ? '请通过点击触发文件选择。' : e.message;
-    toast('❌ 连接 tasks.json 失败：' + hint);
-  }
-}
-
 async function loadTasks() {
   setSyncStatus('syncing', '读取 tasks.json…');
   try {
-    if (location.protocol !== 'file:') {
-      const resp = await fetch('./tasks.json', { cache: 'no-store' });
-      if (resp.status === 404) {
-        tasks = [];
-        setSyncStatus('ok', '未找到 tasks.json（已使用空列表）');
-        applyFilters();
-        return;
-      }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      tasks = Array.isArray(data) ? data : [];
-      setSyncStatus('ok', '数据源：tasks.json');
+    if (location.protocol === 'file:') {
+      tasks = [];
+      setSyncStatus('err', '读取失败');
+      toast('❌ 当前为 file:// 模式，无法自动读取同级 tasks.json。请使用本地服务器打开 taskflow.html。');
       applyFilters();
       return;
     }
 
-    if (!tasksFileHandle) {
+    const resp = await fetch('./tasks.json', { cache: 'no-store' });
+    if (resp.status === 404) {
       tasks = [];
-      setSyncStatus('ok', '未连接 tasks.json（点击右上角“未连接”以选择文件）');
+      setSyncStatus('ok', '未找到 tasks.json（已使用空列表）');
       applyFilters();
       return;
     }
-    const handle = tasksFileHandle;
-    const file = await handle.getFile();
-    const text = await file.text();
-    const data = text ? JSON.parse(text) : [];
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
     tasks = Array.isArray(data) ? data : [];
-    setSyncStatus('ok', '数据源：tasks.json（本地文件）');
+    setSyncStatus('ok', '数据源：tasks.json');
   } catch (e) {
     tasks = [];
     setSyncStatus('err', '读取失败');
-    const hint = isUserGestureError(e) ? '需要点击右上角“未连接”后选择文件。' : e.message;
-    toast('❌ tasks.json 读取失败：' + hint);
+    toast('❌ tasks.json 读取失败：' + e.message);
   }
   applyFilters();
 }
@@ -408,22 +350,15 @@ async function loadTasks() {
 async function persistTasks() {
   setSyncStatus('syncing', '写入 tasks.json…');
   try {
-    if (location.protocol !== 'file:') {
-      const resp = await fetch('./tasks.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tasks, null, 2)
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
-      return;
+    if (location.protocol === 'file:') {
+      throw new Error('file:// 模式不支持自动写入，请使用本地服务器运行');
     }
-
-    const handle = await ensureTasksFileHandle();
-    if (!handle) throw new Error('当前浏览器不支持直接写入本地文件');
-    const writable = await handle.createWritable();
-    await writable.write(JSON.stringify(tasks, null, 2));
-    await writable.close();
+    const resp = await fetch('./tasks.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tasks, null, 2)
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
   } catch (e) {
     setSyncStatus('err', '写入失败');
@@ -742,7 +677,6 @@ document.addEventListener('click', e => {
   const tagEl = e.target.closest('.tag-filter');
   if (tagEl) filterByTag(tagEl.dataset.tag);
 });
-document.getElementById('syncStatus').addEventListener('click', connectTasksFile);
 loadTasks();
 </script>
 </body>
