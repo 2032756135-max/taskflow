@@ -307,8 +307,9 @@ let currentSort = 'created';
 let editingId = null;
 let detailId = null;
 let saveTimer = null;
+let fileHandle = null;
 
-/* ═══════════════════ TASKS.JSON STORAGE（自动读取仓库内 tasks.json） ═══════════════════ */
+/* ═══════════════════ DATA STORAGE（server: tasks.json / file://: localStorage） ═══════════════════ */
 function setSyncStatus(state, label) {
   const el = document.getElementById('syncStatus');
   const dot = el.querySelector('.sync-dot');
@@ -317,13 +318,37 @@ function setSyncStatus(state, label) {
   dot.className = 'sync-dot' + (state === 'syncing' ? ' spin' : '');
 }
 
+
+
+async function readTasksFromPickedFile() {
+  if (!window.showOpenFilePicker) throw new Error('当前浏览器不支持文件写回 API，请改用 Chrome/Edge');
+  const [handle] = await window.showOpenFilePicker({
+    multiple: false,
+    excludeAcceptAllOption: false,
+    types: [{ description: 'JSON 文件', accept: { 'application/json': ['.json'] } }]
+  });
+  fileHandle = handle;
+  const file = await handle.getFile();
+  const text = await file.text();
+  if (!text.trim()) return [];
+  const data = JSON.parse(text);
+  return Array.isArray(data) ? data : [];
+}
+
 async function loadTasks() {
   setSyncStatus('syncing', '读取 tasks.json…');
   try {
     if (location.protocol === 'file:') {
-      tasks = [];
-      setSyncStatus('err', '读取失败');
-      toast('❌ 当前为 file:// 模式，无法自动读取同级 tasks.json。请使用本地服务器打开 taskflow.html。');
+      try {
+        tasks = await readTasksFromPickedFile();
+        setSyncStatus('ok', '数据源：tasks.json（File API）');
+        toast('✅ 已连接 tasks.json（file://）');
+      } catch (pickErr) {
+        const raw = localStorage.getItem('taskflow.tasks');
+        tasks = raw ? JSON.parse(raw) : [];
+        setSyncStatus('ok', '数据源：localStorage');
+        toast('ℹ️ 未选择 tasks.json，已回退到 localStorage');
+      }
       applyFilters();
       return;
     }
@@ -351,7 +376,16 @@ async function persistTasks() {
   setSyncStatus('syncing', '写入 tasks.json…');
   try {
     if (location.protocol === 'file:') {
-      throw new Error('file:// 模式不支持自动写入，请使用本地服务器运行');
+      if (fileHandle) {
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(tasks, null, 2));
+        await writable.close();
+        setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+      } else {
+        localStorage.setItem('taskflow.tasks', JSON.stringify(tasks));
+        setSyncStatus('ok', '已写入 localStorage ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+      }
+      return;
     }
     const resp = await fetch('./tasks.json', {
       method: 'PUT',
