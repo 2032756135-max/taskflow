@@ -172,6 +172,12 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
   #toast { position:fixed; bottom:32px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--surface); border:none; border-radius:24px; padding:10px 24px; font-size:.88rem; z-index:300; display:none; animation:toastIn .3s ease; max-width:320px; font-weight:500; box-shadow:var(--shadow-lg); }
+
+  .insights-panel { margin:0 32px 12px; background:var(--surface-strong); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:var(--shadow-sm); }
+  .insights-grid { display:grid; grid-template-columns:2fr 1fr; gap:14px; }
+  .chart-wrap svg { width:100%; height:140px; display:block; }
+  .date-query input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:7px 10px; margin-bottom:8px; }
+  .date-query .result { font-size:.78rem; color:var(--text2); line-height:1.5; max-height:110px; overflow:auto; }
   @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(12px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
 
   @media(max-width:768px) {
@@ -245,6 +251,19 @@
       <option value="priority">按优先级</option>
       <option value="title">按标题</option>
     </select>
+  </div>
+  <div class="insights-panel">
+    <div class="insights-grid">
+      <div class="chart-wrap">
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:6px">最近7天任务趋势（新增/完成）</div>
+        <svg id="trendChart" viewBox="0 0 520 140" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="date-query">
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:6px">按日期查询</div>
+        <input type="date" id="dateInspector" onchange="updateDateInspector()">
+        <div class="result" id="dateInspectorResult">选择日期后可查看当天新增与完成任务</div>
+      </div>
+    </div>
   </div>
   <div class="task-area" id="taskArea">
     <div class="empty"><div class="big">💾</div><div>正在加载本地数据…</div></div>
@@ -349,7 +368,7 @@ function onJsonFileSelected(event) {
   reader.onload = () => {
     try {
       const parsed = JSON.parse(String(reader.result || '[]'));
-      tasks = Array.isArray(parsed) ? parsed : [];
+      tasks = normalizeTasks(Array.isArray(parsed) ? parsed : []);
       fileHandle = null;
       cacheTasksLocal();
       applyFilters();
@@ -377,7 +396,7 @@ async function readTasksFromPickedFile() {
   const text = await file.text();
   if (!text.trim()) return [];
   const data = JSON.parse(text);
-  return Array.isArray(data) ? data : [];
+  return normalizeTasks(Array.isArray(data) ? data : []);
 }
 
 async function loadTasks() {
@@ -385,13 +404,13 @@ async function loadTasks() {
   try {
     if (location.protocol === 'file:') {
       try {
-        tasks = await readTasksFromPickedFile();
+        tasks = normalizeTasks(await readTasksFromPickedFile());
         cacheTasksLocal();
         setSyncStatus('ok', '数据源：tasks.json（File API）');
         toast('✅ 已连接 tasks.json（file://）');
       } catch (pickErr) {
         const raw = localStorage.getItem('taskflow.tasks');
-        tasks = raw ? JSON.parse(raw) : [];
+        tasks = normalizeTasks(raw ? JSON.parse(raw) : []);
         if (tasks.length) toast('✅ 已从 localStorage 恢复数据（刷新不丢失）');
         setSyncStatus('ok', '数据源：localStorage');
         toast('ℹ️ 未选择 tasks.json，已回退到 localStorage');
@@ -410,12 +429,12 @@ async function loadTasks() {
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    tasks = Array.isArray(data) ? data : [];
+    tasks = normalizeTasks(Array.isArray(data) ? data : []);
     cacheTasksLocal();
     setSyncStatus('ok', '数据源：tasks.json');
   } catch (e) {
     const raw = localStorage.getItem('taskflow.tasks');
-    tasks = raw ? JSON.parse(raw) : [];
+    tasks = normalizeTasks(raw ? JSON.parse(raw) : []);
     setSyncStatus(tasks.length ? 'ok' : 'err', tasks.length ? '读取失败，已恢复本地缓存' : '读取失败');
     toast('❌ tasks.json 读取失败：' + e.message);
   }
@@ -467,6 +486,8 @@ setInterval(tick, 1000); tick();
 function toDateStr(d) { return d.toISOString().slice(0,10); }
 function todayStr()   { return toDateStr(new Date()); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+function dateOnlyFromTs(ts){ return ts? new Date(ts).toISOString().slice(0,10):''; }
+function normalizeTasks(list){ return list.map(t=>({ ...t, created:t.created||Date.now(), completedAt:t.done?(t.completedAt||Date.now()):null })); }
 function daysFromNow(str) {
   if (!str) return null;
   const d = new Date(str); d.setHours(0,0,0,0);
@@ -549,6 +570,8 @@ function applyFilters() {
   renderTasks(list);
   updateStats();
   renderTags();
+  renderTrendChart();
+  updateDateInspector();
 }
 
 /* ═══════════════════ RENDER ═══════════════════ */
@@ -637,6 +660,7 @@ function filterByTag(tag) { document.getElementById('searchInput').value=tag; ap
 function toggleDone(id) {
   const t=tasks.find(x=>x.id===id); if(!t) return;
   t.done=!t.done; t.progress=t.done?100:t.progress;
+  t.completedAt = t.done ? Date.now() : null;
   scheduleSave(); applyFilters();
   toast(t.done?`✅ 完成「${t.title}」`:`↩ 恢复「${t.title}」`);
   if(detailId===id) openDetail(id);
@@ -687,7 +711,7 @@ function saveTask() {
     tasks.unshift({ id:uid(), title, desc:document.getElementById('f-desc').value.trim(),
       priority:document.getElementById('f-pri').value, due:document.getElementById('f-due').value,
       tags, done:false, hours:parseFloat(document.getElementById('f-hours').value)||0,
-      progress:0, notes:'', created:Date.now(), reminded:false });
+      progress:0, notes:'', created:Date.now(), completedAt:null, reminded:false });
   }
   closeModal(); applyFilters();
   scheduleSave();
@@ -730,13 +754,38 @@ function deleteFromDetail() { if(detailId) deleteTask(detailId); }
 
 /* ═══════════════════ EXPORT ═══════════════════ */
 function exportData() {
-  function csvEscape(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
-  const rows=['标题,描述,优先级,截止日期,标签,进度,完成'];
-  tasks.forEach(t=>rows.push([t.title,t.desc||'',priLabel[t.priority]||t.priority,t.due||'',(t.tags||[]).join('|'),(t.progress||0)+'%',t.done?'是':'否'].map(csvEscape).join(',')));
-  const blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
+  const blob=new Blob([JSON.stringify(tasks, null, 2)],{type:'application/json;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`taskflow_${todayStr()}.csv`; a.click();
-  toast('⬇ 已导出 CSV');
+  a.download=`taskflow_${todayStr()}.json`; a.click();
+  toast('⬇ 已导出 JSON');
+}
+
+function renderTrendChart(){
+  const svg=document.getElementById('trendChart'); if(!svg) return;
+  const days=[];
+  for(let i=6;i>=0;i--){ const d=new Date(Date.now()-i*86400000); days.push(d.toISOString().slice(0,10)); }
+  const added=days.map(day=>tasks.filter(t=>dateOnlyFromTs(t.created)===day).length);
+  const done=days.map(day=>tasks.filter(t=>t.completedAt && dateOnlyFromTs(t.completedAt)===day).length);
+  const max=Math.max(1,...added,...done);
+  const x=(i)=>20+i*(480/6);
+  const y=(v)=>120-(v/max)*90;
+  const path=(arr)=>arr.map((v,i)=>`${i?'L':'M'}${x(i)},${y(v)}`).join(' ');
+  const points=(arr,c)=>arr.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${c}"/>`).join('');
+  svg.innerHTML=`<line x1="20" y1="120" x2="500" y2="120" stroke="#d0d7e2"/>
+    <path d="${path(added)}" fill="none" stroke="#0a84ff" stroke-width="2.5"/>
+    <path d="${path(done)}" fill="none" stroke="#30d158" stroke-width="2.5"/>
+    ${points(added,'#0a84ff')}${points(done,'#30d158')}
+    <text x="22" y="18" fill="#0a84ff" font-size="11">新增</text><text x="58" y="18" fill="#30d158" font-size="11">完成</text>`;
+}
+
+function updateDateInspector(){
+  const inp=document.getElementById('dateInspector'); const box=document.getElementById('dateInspectorResult');
+  if(!inp||!box) return;
+  const day=inp.value;
+  if(!day){ box.textContent='选择日期后可查看当天新增与完成任务'; return; }
+  const created=tasks.filter(t=>dateOnlyFromTs(t.created)===day).map(t=>t.title);
+  const completed=tasks.filter(t=>t.completedAt && dateOnlyFromTs(t.completedAt)===day).map(t=>t.title);
+  box.innerHTML=`<div>新增（${created.length}）：${created.length?created.map(esc).join('、'):'无'}</div><div style="margin-top:6px">完成（${completed.length}）：${completed.length?completed.map(esc).join('、'):'无'}</div>`;
 }
 
 /* ═══════════════════ KEYBOARD ═══════════════════ */
