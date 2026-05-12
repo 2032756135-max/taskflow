@@ -228,6 +228,8 @@
   <div class="toolbar">
     <h2 id="viewTitle">全部任务</h2>
     <div class="toolbar-spacer"></div>
+    <button class="btn btn-ghost" onclick="importJson()">导入JSON</button>
+    <input type="file" id="jsonInput" accept=".json,application/json" style="display:none" onchange="onJsonFileSelected(event)">
     <button class="btn btn-ghost" onclick="exportData()">导出</button>
     <button class="btn btn-primary" onclick="openAddModal()">＋ 新建任务</button>
   </div>
@@ -318,6 +320,49 @@ function setSyncStatus(state, label) {
   dot.className = 'sync-dot' + (state === 'syncing' ? ' spin' : '');
 }
 
+function cacheTasksLocal() {
+  localStorage.setItem('taskflow.tasks', JSON.stringify(tasks));
+}
+
+async function importJson() {
+  if (location.protocol === 'file:' && window.showOpenFilePicker) {
+    try {
+      tasks = await readTasksFromPickedFile();
+      cacheTasksLocal();
+      applyFilters();
+      setSyncStatus('ok', '数据源：tasks.json（File API）');
+      toast('✅ 已导入并绑定 JSON 文件');
+      await persistTasks();
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      toast('⚠ File API 导入失败，已切换普通文件上传');
+    }
+  }
+  document.getElementById('jsonInput').click();
+}
+
+function onJsonFileSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result || '[]'));
+      tasks = Array.isArray(parsed) ? parsed : [];
+      fileHandle = null;
+      cacheTasksLocal();
+      applyFilters();
+      setSyncStatus('ok', `已导入 ${file.name}（本地缓存）`);
+      toast('✅ JSON 导入成功，已启用本地读写');
+    } catch (err) {
+      toast('❌ JSON 格式错误：' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+  event.target.value = '';
+}
+
 
 
 async function readTasksFromPickedFile() {
@@ -341,11 +386,13 @@ async function loadTasks() {
     if (location.protocol === 'file:') {
       try {
         tasks = await readTasksFromPickedFile();
+        cacheTasksLocal();
         setSyncStatus('ok', '数据源：tasks.json（File API）');
         toast('✅ 已连接 tasks.json（file://）');
       } catch (pickErr) {
         const raw = localStorage.getItem('taskflow.tasks');
         tasks = raw ? JSON.parse(raw) : [];
+        if (tasks.length) toast('✅ 已从 localStorage 恢复数据（刷新不丢失）');
         setSyncStatus('ok', '数据源：localStorage');
         toast('ℹ️ 未选择 tasks.json，已回退到 localStorage');
       }
@@ -356,6 +403,7 @@ async function loadTasks() {
     const resp = await fetch('./tasks.json', { cache: 'no-store' });
     if (resp.status === 404) {
       tasks = [];
+      cacheTasksLocal();
       setSyncStatus('ok', '未找到 tasks.json（已使用空列表）');
       applyFilters();
       return;
@@ -363,10 +411,12 @@ async function loadTasks() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     tasks = Array.isArray(data) ? data : [];
+    cacheTasksLocal();
     setSyncStatus('ok', '数据源：tasks.json');
   } catch (e) {
-    tasks = [];
-    setSyncStatus('err', '读取失败');
+    const raw = localStorage.getItem('taskflow.tasks');
+    tasks = raw ? JSON.parse(raw) : [];
+    setSyncStatus(tasks.length ? 'ok' : 'err', tasks.length ? '读取失败，已恢复本地缓存' : '读取失败');
     toast('❌ tasks.json 读取失败：' + e.message);
   }
   applyFilters();
@@ -382,7 +432,7 @@ async function persistTasks() {
         await writable.close();
         setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
       } else {
-        localStorage.setItem('taskflow.tasks', JSON.stringify(tasks));
+        cacheTasksLocal();
         setSyncStatus('ok', '已写入 localStorage ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
       }
       return;
@@ -393,6 +443,7 @@ async function persistTasks() {
       body: JSON.stringify(tasks, null, 2)
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    cacheTasksLocal();
     setSyncStatus('ok', '已写入 tasks.json ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
   } catch (e) {
     setSyncStatus('err', '写入失败');
